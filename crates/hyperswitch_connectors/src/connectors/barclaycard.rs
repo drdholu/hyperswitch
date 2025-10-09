@@ -56,6 +56,7 @@ use url::Url;
 use crate::{
     constants::{self, headers},
     types::ResponseRouterData,
+    utils as connector_utils,
     utils::{
         convert_amount, PaymentsAuthorizeRequestData, RefundsRequestData,
         RouterData as OtherRouterData,
@@ -556,12 +557,30 @@ impl ConnectorIntegration<Authorize, PaymentsAuthorizeData, PaymentsResponseData
                 .response
                 .parse_struct("Barclaycard PaymentsAuthorizeResponse")
                 .change_context(errors::ConnectorError::ResponseDeserializationFailed)?;
+
+            // Create integrity object using request amount and currency
+            let response_integrity_object = connector_utils::get_authorise_integrity_object(
+                self.amount_converter,
+                self
+                    .amount_converter
+                    .convert(MinorUnit::new(data.request.amount), data.request.currency)
+                    .change_context(errors::ConnectorError::AmountConversionFailed)?,
+                data.request.currency.to_string(),
+            )?;
+
             event_builder.map(|i| i.set_response_body(&response));
             router_env::logger::info!(connector_response=?response);
-            RouterData::try_from(ResponseRouterData {
+
+            let new_router_data = RouterData::try_from(ResponseRouterData {
                 response,
                 data: data.clone(),
                 http_code: res.status_code,
+            })
+            .change_context(errors::ConnectorError::ResponseHandlingFailed);
+
+            new_router_data.map(|mut router_data| {
+                router_data.request.integrity_object = Some(response_integrity_object);
+                router_data
             })
         }
     }
@@ -671,12 +690,29 @@ impl ConnectorIntegration<PSync, PaymentsSyncData, PaymentsResponseData> for Bar
             .response
             .parse_struct("Barclaycard PaymentsSyncResponse")
             .change_context(errors::ConnectorError::ResponseDeserializationFailed)?;
+
+        // Create integrity object using request amount and currency
+        let response_integrity_object = connector_utils::get_sync_integrity_object(
+            self.amount_converter,
+            self
+                .amount_converter
+                .convert(data.request.amount, data.request.currency)
+                .change_context(errors::ConnectorError::AmountConversionFailed)?,
+            data.request.currency.to_string(),
+        )?;
+
         event_builder.map(|i| i.set_response_body(&response));
         router_env::logger::info!(connector_response=?response);
-        RouterData::try_from(ResponseRouterData {
+
+        let new_router_data = RouterData::try_from(ResponseRouterData {
             response,
             data: data.clone(),
             http_code: res.status_code,
+        });
+
+        new_router_data.map(|mut router_data| {
+            router_data.request.integrity_object = Some(response_integrity_object);
+            router_data
         })
     }
 
@@ -761,12 +797,32 @@ impl ConnectorIntegration<Capture, PaymentsCaptureData, PaymentsResponseData> fo
             .response
             .parse_struct("Barclaycard PaymentsCaptureResponse")
             .change_context(errors::ConnectorError::ResponseDeserializationFailed)?;
+
+        // Create integrity object using request amount and currency
+        let response_integrity_object = connector_utils::get_capture_integrity_object(
+            self.amount_converter,
+            Some(
+                self
+                    .amount_converter
+                    .convert(MinorUnit::new(data.request.amount_to_capture), data.request.currency)
+                    .change_context(errors::ConnectorError::AmountConversionFailed)?,
+            ),
+            data.request.currency.to_string(),
+        )?;
+
         event_builder.map(|i| i.set_response_body(&response));
         router_env::logger::info!(connector_response=?response);
-        RouterData::try_from(ResponseRouterData {
+
+        let new_router_data = RouterData::try_from(ResponseRouterData {
             response,
             data: data.clone(),
             http_code: res.status_code,
+        })
+        .change_context(errors::ConnectorError::ResponseHandlingFailed);
+
+        new_router_data.map(|mut router_data| {
+            router_data.request.integrity_object = Some(response_integrity_object);
+            router_data
         })
     }
 
@@ -1006,13 +1062,32 @@ impl ConnectorIntegration<Execute, RefundsData, RefundsResponseData> for Barclay
             .response
             .parse_struct("barclaycard RefundResponse")
             .change_context(errors::ConnectorError::ResponseDeserializationFailed)?;
+
+        // Create integrity object using request amount and currency
+        let response_integrity_object = connector_utils::get_refund_integrity_object(
+            self.amount_converter,
+            self
+                .amount_converter
+                .convert(MinorUnit::new(data.request.refund_amount), data.request.currency)
+                .change_context(errors::ConnectorError::AmountConversionFailed)?,
+            data.request.currency.to_string(),
+        )?;
+
         event_builder.map(|i| i.set_response_body(&response));
         router_env::logger::info!(connector_response=?response);
-        RouterData::try_from(ResponseRouterData {
+
+        let new_router_data = RouterData::try_from(ResponseRouterData {
             response,
             data: data.clone(),
             http_code: res.status_code,
-        })
+        });
+
+        new_router_data
+            .map(|mut router_data| {
+                router_data.request.integrity_object = Some(response_integrity_object);
+                router_data
+            })
+            .change_context(errors::ConnectorError::ResponseHandlingFailed)
     }
 
     fn get_error_response(
@@ -1081,13 +1156,32 @@ impl ConnectorIntegration<RSync, RefundsData, RefundsResponseData> for Barclayca
             .response
             .parse_struct("barclaycard RefundSyncResponse")
             .change_context(errors::ConnectorError::ResponseDeserializationFailed)?;
+
+        // Create integrity object using request amount and currency
+        let response_integrity_object = connector_utils::get_refund_integrity_object(
+            self.amount_converter,
+            self
+                .amount_converter
+                .convert(MinorUnit::new(data.request.refund_amount), data.request.currency)
+                .change_context(errors::ConnectorError::AmountConversionFailed)?,
+            data.request.currency.to_string(),
+        )?;
+
         event_builder.map(|i| i.set_response_body(&response));
         router_env::logger::info!(connector_response=?response);
-        RouterData::try_from(ResponseRouterData {
+
+        let new_router_data = RouterData::try_from(ResponseRouterData {
             response,
             data: data.clone(),
             http_code: res.status_code,
-        })
+        });
+
+        new_router_data
+            .map(|mut router_data| {
+                router_data.request.integrity_object = Some(response_integrity_object);
+                router_data
+            })
+            .change_context(errors::ConnectorError::ResponseHandlingFailed)
     }
 
     fn get_error_response(
